@@ -1,0 +1,94 @@
+clear
+clc
+close('all')
+
+inputFilePath = 'C:\Dementia\nii\labels_monai\s0001342-0004-00001-000104-01.nii';
+process_nifti(inputFilePath);
+
+function process_nifti(inputFilePath)
+    % 重新切片 NIfTI 文件
+    [filePath, fileName, fileExt] = fileparts(inputFilePath);
+    reslicedFilePath = fullfile(filePath, [fileName, '_resliced', fileExt]);
+    
+    reslice_nii(inputFilePath, reslicedFilePath);
+
+    % 加載重新切片後的 NIfTI 文件
+    nii = load_nii(reslicedFilePath);
+
+    % 提取影像數據
+    imageData = nii.img;
+
+    % 去除噪聲（使用高斯濾波器）
+    denoisedImageData = imgaussfilt3(imageData, 2); % 2是標準差，可以根據需要調整
+
+    % 填充影像，避免擴張時裁切
+    paddingSize = 8;  % 填充的大小應與結構元素的大小相同
+    paddedImageData = padarray(denoisedImageData, [paddingSize, paddingSize, paddingSize], 'both');
+
+    % 擴張影像
+    se = strel('cube', paddingSize);  % 定義擴張的結構元素，這裡使用8x8x8的方形
+    dilatedImageData = imdilate(paddedImageData, se);
+
+    % 去除填充部分
+    croppedDilatedImageData = dilatedImageData(paddingSize+1:end-paddingSize, paddingSize+1:end-paddingSize, paddingSize+1:end-paddingSize);
+
+    % 修剪擴張後影像，使其與原始影像大小相同
+    finalDilatedImageData = croppedDilatedImageData(1:size(imageData,1), 1:size(imageData,2), 1:size(imageData,3));
+
+    % 計算差集
+    differenceImageData = finalDilatedImageData - denoisedImageData;
+
+    % 計算每個體素的體積 (毫米^3)
+    voxelVolume = prod(nii.hdr.dime.pixdim(2:4));
+
+    % 計算原始影像的體積
+    numOriginalVoxels = sum(imageData(:) > 0);
+    originalVolume = numOriginalVoxels * voxelVolume;
+
+    % 計算擴張後影像的體積
+    numDilatedVoxels = sum(finalDilatedImageData(:) > 0);
+    dilatedVolume = numDilatedVoxels * voxelVolume;
+
+    % 計算差集影像的體積
+    numDifferenceVoxels = sum(differenceImageData(:) > 0);
+    differenceVolume = numDifferenceVoxels * voxelVolume;
+
+    % 顯示計算結果
+    disp(['原始影像的體積: ', num2str(originalVolume), ' mm^3']);
+    disp(['擴張後影像的體積: ', num2str(dilatedVolume), ' mm^3']);
+    disp(['差集影像的體積: ', num2str(differenceVolume), ' mm^3']);
+
+    % 計算中間切片的索引
+    middleSliceIndex = round(size(imageData, 3) / 2);
+
+    % 顯示原始影像的中間切片
+    figure;
+    subplot(1, 3, 1);
+    imshow(imageData(:, :, middleSliceIndex), []);
+    title('原始影像');
+
+    % 顯示擴張後影像的中間切片
+    subplot(1, 3, 2);
+    imshow(finalDilatedImageData(:, :, middleSliceIndex), []);
+    title('擴張後影像');
+
+    % 顯示差集影像的中間切片
+    subplot(1, 3, 3);
+    imshow(differenceImageData(:, :, middleSliceIndex), []);
+    title('差集影像');
+
+    % 創建新的 NIfTI 結構
+    dilatedNii = nii;
+    dilatedNii.img = finalDilatedImageData;
+
+    % 保存擴張後的 NII 檔案
+    dilatedFilePath = fullfile(filePath, [fileName, '_dilated', fileExt]);
+    save_nii(dilatedNii, dilatedFilePath);
+
+    % 保存差集影像的 NII 檔案
+    differenceNii = nii;
+    differenceNii.img = differenceImageData;
+    differenceFilePath = fullfile(filePath, [fileName, '_difference', fileExt]);
+    save_nii(differenceNii, differenceFilePath);
+end
+
