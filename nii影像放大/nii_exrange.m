@@ -46,8 +46,8 @@ for i = 1:length(imageFiles)
     niftiwrite(denoisedImageData, denoisedFilePath, info);
     
     % 擴張影像
-    dilationSize = 10;  % 擴張結構元素的大小
-    se = strel('cube', dilationSize);  % 定義擴張的結構元素
+    radius = 10;  % 擴張結構元素的大小
+    se = strel('sphere', radius);  % 定義擴張的結構元素
     dilatedImageData = imdilate(denoisedImageData, se);
     
     % 修剪擴張後影像，使其與原始影像大小相同
@@ -95,4 +95,3 @@ resultsTable = cell2table(results, 'VariableNames', {'FileName', 'OriginalVolume
 writetable(resultsTable, outputCSV);
 
 disp(['結果已保存至 ', outputCSV]);
-
