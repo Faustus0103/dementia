@@ -6,11 +6,15 @@ close all;
 inputDir = 'C:\Dementia\nii\labels_monai'; 
 outputCSV = 'MRI_BoneMeasurements.csv';
 
-% 設置擴張後影像和差集影像的儲存資料夾
+% 設置去噪影像、擴張後影像和差集影像的儲存資料夾
+denoisedDir = fullfile(inputDir, 'denoised');
 dilatedDir = fullfile(inputDir, 'dilated');
 differenceDir = fullfile(inputDir, 'difference');
 
 % 創建儲存資料夾（如果尚未存在）
+if ~exist(denoisedDir, 'dir')
+    mkdir(denoisedDir);
+end
 if ~exist(dilatedDir, 'dir')
     mkdir(dilatedDir);
 end
@@ -34,21 +38,20 @@ for i = 1:length(imageFiles)
     imageData = nii;
     
     % 去除噪聲（使用高斯濾波器）
-    denoisedImageData = imgaussfilt3(imageData, 2); % 2是標準差，可以根據需要調整
+    sigma = 2;  % 高斯濾波的標準差
+    denoisedImageData = imgaussfilt3(imageData, sigma);
     
-    % 填充影像，避免擴張時裁切
-    paddingSize = 4;  % 填充的大小應與結構元素的大小相同
-    paddedImageData = padarray(denoisedImageData, [paddingSize, paddingSize, paddingSize], 'both');
+    % 儲存去噪後的影像
+    denoisedFilePath = fullfile(denoisedDir, [erase(imageFiles(i).name, '.nii'), '_denoised.nii']);
+    niftiwrite(denoisedImageData, denoisedFilePath, info);
     
     % 擴張影像
-    se = strel('cube', paddingSize);  % 定義擴張的結構元素
-    dilatedImageData = imdilate(paddedImageData, se);
-    
-    % 去除填充部分
-    croppedDilatedImageData = dilatedImageData(paddingSize+1:end-paddingSize, paddingSize+1:end-paddingSize, paddingSize+1:end-paddingSize);
+    dilationSize = 10;  % 擴張結構元素的大小
+    se = strel('cube', dilationSize);  % 定義擴張的結構元素
+    dilatedImageData = imdilate(denoisedImageData, se);
     
     % 修剪擴張後影像，使其與原始影像大小相同
-    finalDilatedImageData = croppedDilatedImageData(1:size(imageData,1), 1:size(imageData,2), 1:size(imageData,3));
+    finalDilatedImageData = dilatedImageData(1:size(imageData,1), 1:size(imageData,2), 1:size(imageData,3));
     
     % 計算差集
     differenceImageData = finalDilatedImageData - denoisedImageData;
@@ -78,16 +81,12 @@ for i = 1:length(imageFiles)
     fprintf('Processed %s\n', imageFiles(i).name);
 
     % 獲取影像名稱和擴展名
-    [~, name, ext] = fileparts(imageFiles(i).name);
+    [~, name, ~] = fileparts(imageFiles(i).name);
 
     % 保存擴張後的 NII 檔案
-    dilatedNii = info;
-    dilatedNii.Image = finalDilatedImageData;
     niftiwrite(finalDilatedImageData, fullfile(dilatedDir, [name '_dilated.nii']), info);
     
     % 保存差集影像的 NII 檔案
-    differenceNii = info;
-    differenceNii.Image = differenceImageData;
     niftiwrite(differenceImageData, fullfile(differenceDir, [name '_difference.nii']), info);
 end
 
